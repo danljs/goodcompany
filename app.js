@@ -37,7 +37,7 @@ let loadHttp = url => {
 
 let getDom = body => {
   return new Promise((resolve, reject) => {
-    jsdom.env(body, ['http://code.jquery.com/jquery.js'], (err, window) => {
+    jsdom.env(body, ['https://code.jquery.com/jquery.js'], (err, window) => {
       if (err) {
         reject(err);
       } else {
@@ -103,12 +103,13 @@ let getLast = (cur) => {
         return file.substr(0, 2) === PREFIX;
       });
 
-      if (!files.length) {
+      if (files.length <= 1) {
         resolve([null, cur]);
         return;
       }
 
       files.sort();
+      files.pop();
       let last = files.pop();
       fs.readFile(BASE_DIR + last, (err, data) => {
         if (err) {
