@@ -5,13 +5,13 @@ const fs = require('fs'),
   openurl = require('openurl');
 
 const BASE_DIR = '/Users/aaronding/projects/goodcompany/result/';
-const RESULT_FILE_NAME = 'result_' + new Date().getTime() + '.json';
-const REPORT_FILE_NAME = 'report';
-const RESULT_FILE = BASE_DIR + RESULT_FILE_NAME;
-const REPORT_FILE = BASE_DIR + REPORT_FILE_NAME;
-const PREFIX = '_e';
+const PREFIX = '_e2';
+const RUNNING_TIME = new Date().toJSON();
+const RESULT_FILE = BASE_DIR + PREFIX + RUNNING_TIME + '.json';
 
+const key = 'email';
 const keys = ['firstName', 'lastName', 'ext', 'cell', 'alt', 'title', 'email'];
+const ignoreKeys = [];
 
 let loadHttp = url => {
   let options = URL.parse(url);
@@ -73,22 +73,6 @@ let getData = win => {
   });
 };
 
-let save = json => {
-  console.log('saving... file');
-  return new Promise((resolve, reject) => {
-    fs.mkdir(BASE_DIR, () => {
-      fs.writeFile(BASE_DIR + PREFIX + new Date().getTime(), JSON.stringify(json), err => {
-        if (err) {
-          reject(err);
-          return;
-        }
-        console.log('file saved');
-        resolve(json);
-      });
-    });
-  });
-};
-
 let getLast = (cur) => {
   console.log('looking for the last file');
   return new Promise((resolve, reject) => {
@@ -100,16 +84,15 @@ let getLast = (cur) => {
       }
 
       files = files.filter(file => {
-        return file.substr(0, 2) === PREFIX;
+        return file.startsWith(PREFIX);
       });
 
-      if (files.length <= 1) {
+      if (files.length < 1) {
         resolve([null, cur]);
         return;
       }
 
       files.sort();
-      files.pop();
       let last = files.pop();
       fs.readFile(BASE_DIR + last, (err, data) => {
         if (err) {
@@ -117,8 +100,8 @@ let getLast = (cur) => {
           return;
         }
 
-        console.log('found the last one');
-        resolve([JSON.parse(data), cur]);
+        console.log('found the last one:' + last);
+        resolve([JSON.parse(data).cur, cur]);
       });
     });
   });
@@ -128,14 +111,19 @@ let compare = data => {
   console.log('comparing...');
 
   function compare(e1, e2) {
-    let same = true;
+    let same = true,
+      diff = {};
     keys.forEach(key => {
+      if (ignoreKeys.indexOf(key) >= 0) {
+        return;
+      }
       if (e1[key] !== e2[key]) {
+        diff[key] = e2[key];
         same = false;
       }
     });
 
-    return same;
+    return same ? undefined : diff;
   }
 
   return new Promise((resolve, reject) => {
@@ -143,32 +131,67 @@ let compare = data => {
 
     let deleted = [], added = [], modified = [];
     let result = {
-      total: cur.length,
       deleted: deleted,
       added: added,
-      modified: modified
+      modified: modified,
+      last: last,
+      cur: cur
     };
 
     if (!last) {
       console.log('no previous file');
+      result.added = cur;
       resolve(result);
       return;
     }
 
+    last.sort((c1, c2) => {
+      if (c1[key] < c2[key]) {
+        return -1;
+      } else if (c1[key] > c2[key]) {
+        return 1;
+      } else {
+        return 0;
+      }
+    });
+
+    cur.sort((c1, c2) => {
+      if (c1[key] < c2[key]) {
+        return -1;
+      } else if (c1[key] > c2[key]) {
+        return 1;
+      } else {
+        return 0;
+      }
+    });
+
     let i = 0, j = 0;
 
     while (last[i] || cur[j]) {
-      if (last[i].email === cur[j].email) {
-        if (!compare(last[i], cur[j])) {
+      if (!last[i]) {
+        added.push(cur[j]);
+        j++;
+        continue;
+      }
+      if (!cur[j]) {
+        deleted.push(last[i]);
+        i++;
+        continue;
+      }
+      if (last[i][key] === cur[j][key]) {
+        let diff = compare(last[i], cur[j]);
+        if (diff) {
           modified.push({
             last: last[i],
-            cur: cur[j]
+            cur: diff
           });
         }
         i++;
         j++;
-      } else {
-        if (last[i].email < cur[j].email) {
+        continue;
+      }
+
+      if (last[i][key] < cur[j][key]) {
           deleted.push(last[i]);
           i++;
         } else {
@@ -176,39 +199,54 @@ let compare = data => {
           j++;
         }
       }
-    }
 
     console.log('compared');
     resolve(result);
   });
 };
 
+let generateReport = result => {
+  let report = {};
+  report.total = result.cur.length;
+  report.addedCount = result.added.length;
+  report.modifiedCount = result.modified.length;
+  report.deletedCount = result.deleted.length;
+
+  report.added = result.added;
+  report.modified = result.modified;
+  report.deleted = result.deleted;
+
+  report.cur = result.cur;
+
+  return report;
+};
+
 let processResult = result => {
   console.log('processing result');
   return new Promise((resolve, reject) => {
-    fs.writeFile(RESULT_FILE, JSON.stringify(result, null, 2), err => {
-      if (err) {
-        reject(err);
-        return;
-      }
+    if (result.added.length + result.deleted.length + result.modified.length > 0) {
+      let report = generateReport(result);
 
-      console.log('processed');
-      resolve(result);
-    });
+      fs.writeFile(RESULT_FILE, JSON.stringify(report, null, 2), err => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        openurl.open(RESULT_FILE);
+        console.log('processed');
+        resolve(result);
+      });
+    } else {
+      console.log('no changes found');
+      resolve();
+    }
   });
 };
 
 let run = () => {
-  loadHttp('http://10.30.0.201/etc/employees.php?sort=mail')
-    .then(getDom).then(getData).then(save).then(getLast).then(compare).then(processResult).then(result => {
-
-    let report = `${result.deleted.length} deleted, ${result.added.length} added, ${result.modified.length} modified`;
-    fs.writeFile(REPORT_FILE, report, err => {
-      if (!err) {
-        openurl.open(REPORT_FILE);
-        console.log('done');
-      }
-    });
+  let url = 'http://10.30.0.201/etc/employees.php?sort=mail';
+  loadHttp(url).then(getDom).then(getData).then(getLast).then(compare).then(processResult).then(result => {
+    console.log('done');
   }, err => {
     console.log(err);
   });
