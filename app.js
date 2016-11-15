@@ -4,8 +4,8 @@ const fs = require('fs'),
   jsdom = require('jsdom'),
   openurl = require('openurl');
 
-const BASE_DIR = '/tmp/goodcompany/';
-const RESULT_FILE_NAME = 'result.json';
+const BASE_DIR = '/Users/aaronding/projects/goodcompany/result/';
+const RESULT_FILE_NAME = 'result_' + new Date().getTime() + '.json';
 const REPORT_FILE_NAME = 'report';
 const RESULT_FILE = BASE_DIR + RESULT_FILE_NAME;
 const REPORT_FILE = BASE_DIR + REPORT_FILE_NAME;
@@ -47,7 +47,7 @@ let getDom = body => {
   });
 };
 
-let getEmployees = win => {
+let getData = win => {
   return new Promise((resolve, reject) => {
     let $ = win.$;
     let all = $('table tr');
@@ -127,7 +127,7 @@ let getLast = (cur) => {
 let compare = data => {
   console.log('comparing...');
 
-  function compareEmployee(e1, e2) {
+  function compare(e1, e2) {
     let same = true;
     keys.forEach(key => {
       if (e1[key] !== e2[key]) {
@@ -143,6 +143,7 @@ let compare = data => {
 
     let deleted = [], added = [], modified = [];
     let result = {
+      total: cur.length,
       deleted: deleted,
       added: added,
       modified: modified
@@ -158,7 +159,7 @@ let compare = data => {
 
     while (last[i] || cur[j]) {
       if (last[i].email === cur[j].email) {
-        if (!compareEmployee(last[i], cur[j])) {
+        if (!compare(last[i], cur[j])) {
           modified.push({
             last: last[i],
             cur: cur[j]
@@ -199,7 +200,7 @@ let processResult = result => {
 
 let run = () => {
   loadHttp('http://10.30.0.201/etc/employees.php?sort=mail')
-    .then(getDom).then(getEmployees).then(save).then(getLast).then(compare).then(processResult).then(result => {
+    .then(getDom).then(getData).then(save).then(getLast).then(compare).then(processResult).then(result => {
 
     let report = `${result.deleted.length} deleted, ${result.added.length} added, ${result.modified.length} modified`;
     fs.writeFile(REPORT_FILE, report, err => {
